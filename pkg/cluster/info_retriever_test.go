@@ -1,21 +1,21 @@
 package cluster
 
 import (
+	config2 "github.com/topfreegames/pitaya/v2/pkg/config"
 	"testing"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
-	"github.com/topfreegames/pitaya/pkg/config"
 )
 
-func TestConfigInfoRetrieverRegion(t *testing.T) {
+func TestInfoRetrieverRegion(t *testing.T) {
 	t.Parallel()
 
 	c := viper.New()
 	c.Set("pitaya.cluster.info.region", "us")
-	config := config.NewConfig(c)
+	conf := config2.NewConfig(c)
 
-	infoRetriever := NewConfigInfoRetriever(config)
+	infoRetriever := NewInfoRetriever(*config2.NewInfoRetrieverConfig(conf))
 
 	assert.Equal(t, "us", infoRetriever.Region())
 }

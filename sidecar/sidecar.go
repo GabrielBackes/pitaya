@@ -2,6 +2,13 @@ package sidecar
 
 import (
 	"context"
+	pitaya "github.com/topfreegames/pitaya/v2/pkg"
+	"github.com/topfreegames/pitaya/v2/pkg/cluster"
+	"github.com/topfreegames/pitaya/v2/pkg/config"
+	"github.com/topfreegames/pitaya/v2/pkg/constants"
+	"github.com/topfreegames/pitaya/v2/pkg/errors"
+	"google.golang.org/protobuf/proto"
+
 	"net"
 	"os"
 	"os/signal"
@@ -12,19 +19,15 @@ import (
 	"sync/atomic"
 
 	"github.com/opentracing/opentracing-go"
-	"github.com/sirupsen/logrus"
-	pitaya "github.com/topfreegames/pitaya/pkg"
-	"github.com/topfreegames/pitaya/pkg/cluster"
-	"github.com/topfreegames/pitaya/pkg/config"
-	"github.com/topfreegames/pitaya/pkg/constants"
-	"github.com/topfreegames/pitaya/pkg/errors"
-	"github.com/topfreegames/pitaya/pkg/logger"
-	"github.com/topfreegames/pitaya/pkg/protos"
-	"github.com/topfreegames/pitaya/pkg/tracing"
+	"github.com/topfreegames/pitaya/v2/pkg/logger"
+	"github.com/topfreegames/pitaya/v2/pkg/logger/logrus"
+	"github.com/topfreegames/pitaya/v2/pkg/protos"
+	"github.com/topfreegames/pitaya/v2/pkg/tracing"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	clusterprotos "github.com/topfreegames/pitaya/v2/examples/demo/protos"
 )
 
 // TODO: implement jaeger into this, test everything, if connection dies this
@@ -41,14 +44,14 @@ import (
 
 // Sidecar main struct to keep state
 type Sidecar struct {
-	config        *config.Config
+	config        *config.BuilderConfig
 	sidecarServer protos.SidecarServer
 	stopChan      chan bool
-	log           *logrus.Entry
 	callChan      chan (*Call)
 	sdChan        chan (*protos.SDEvent)
 	shouldRun     bool
 	listener      net.Listener
+	debug bool
 }
 
 // Call struct represents an incoming RPC call from other servers
@@ -65,6 +68,7 @@ type Call struct {
 // with the sidecar client
 type SidecarServer struct {
 	protos.UnimplementedPitayaServer
+	pitayaApp   pitaya.Pitaya
 }
 
 var (
@@ -127,6 +131,13 @@ func (s *Sidecar) Call(ctx context.Context, req *protos.Request) (*protos.Respon
 	reqMap[call.reqId] = call
 	reqMutex.Unlock()
 
+	logger.Log.Info("Message on route:", req.Msg.Route)
+
+	var msg clusterprotos.RPCMsg
+	proto.Unmarshal(req.Msg.GetData(), &msg)
+
+	logger.Log.Info("Message data:", msg.Msg)
+
 	s.callChan <- call
 
 	defer func() {
@@ -138,7 +149,7 @@ func (s *Sidecar) Call(ctx context.Context, req *protos.Request) (*protos.Respon
 	select {
 	case <-call.done:
 		return call.res, nil
-	case <-time.After(sidecar.config.GetDuration("pitaya.sidecar.calltimeout")):
+	case <-time.After(sidecar.config.Pitaya.Sidecar.CallTimeout):
 		close(call.done)
 		return &protos.Response{}, constants.ErrSidecarCallTimeout
 	}
@@ -151,6 +162,12 @@ func (s *SidecarServer) finishRPC(ctx context.Context, res *protos.RPCResponse) 
 	defer reqMutex.RUnlock()
 	call, ok := reqMap[res.ReqId]
 	if ok {
+		logger.Log.Info("Response on route:", call.req.Msg.Route)
+
+		var msg clusterprotos.RPCRes
+		proto.Unmarshal(res.Res.Data, &msg)
+
+		logger.Log.Info("Response data:", msg.Msg)
 		call.res = res.Res
 		call.err = res.Err
 		close(call.done)
@@ -268,7 +285,7 @@ func getCtxWithParentSpan(ctx context.Context, op string) context.Context {
 // other pitaya servers
 func (s *SidecarServer) SendRPC(ctx context.Context, in *protos.RequestTo) (*protos.Response, error) {
 	pCtx := getCtxWithParentSpan(ctx, in.Msg.Route)
-	ret, err := pitaya.RawRPC(pCtx, in.ServerID, in.Msg.Route, in.Msg.Data)
+	ret, err := s.pitayaApp.RawRPC(pCtx, in.ServerID, in.Msg.Route, in.Msg.Data)
 	defer tracing.FinishSpan(pCtx, err)
 	return ret, err
 }
@@ -308,44 +325,41 @@ func (s *SidecarServer) SendKick(ctx context.Context, in *protos.KickRequest) (*
 // during the initialization of the sidecar client, all other methods will only
 // work when this one was already called
 func (s *SidecarServer) StartPitaya(ctx context.Context, req *protos.StartPitayaRequest) (*protos.Error, error) {
-	config := req.GetConfig()
-	pitaya.Configure(
-		config.GetFrontend(),
-		config.GetType(),
-		pitaya.Cluster,
-		config.GetMetadata(),
-		sidecar.config.GetViper(),
-	)
+	pitayaconfig := req.GetConfig()
 
-	pitaya.SetDebug(req.GetDebugLog())
+	builder := pitaya.NewDefaultBuilder(
+		pitayaconfig.GetFrontend(),
+		pitayaconfig.GetType(),
+		pitaya.Cluster,
+		pitayaconfig.GetMetadata(),
+		*sidecar.config,
+		)
+
+	builder.ServiceDiscovery.AddListener(sidecar)
+
+	// register the sidecar as the pitaya server so that calls will be delivered
+	// here and we can forward to the remote process
+	builder.RPCServer.SetPitayaServer(sidecar)
+
+	s.pitayaApp = builder.Build()
+
+	// Start our own logger
+	log := logrus.New()
+
+	s.pitayaApp.SetDebug(req.GetDebugLog())
+
+	pitaya.SetLogger(log.WithField("source", "sidecar"))
 
 	// TODO support frontend servers
-	if config.GetFrontend() {
+	if pitayaconfig.GetFrontend() {
 		//t := acceptor.NewTCPAcceptor(":3250") pitaya.AddAcceptor(t)
 		logger.Log.Fatal("Frontend servers not supported yet")
 	}
 
-	ns, err := cluster.NewNatsRPCServer(pitaya.GetConfig(), pitaya.GetServer(), pitaya.GetMetricsReporters(), pitaya.GetDieChan())
-	if err != nil {
-		return nil, err
-	}
-
-	var sd cluster.ServiceDiscovery
-	sd, err = cluster.NewEtcdServiceDiscovery(pitaya.GetConfig(), pitaya.GetServer(), pitaya.GetDieChan())
-	if err != nil {
-		return nil, err
-	}
-	sd.AddListener(sidecar)
-
-	// register the sidecar as the pitaya server so that calls will be delivered
-	// here and we can forward to the remote process
-	ns.SetPitayaServer(sidecar)
-	pitaya.SetRPCServer(ns)
-	pitaya.SetServiceDiscoveryClient(sd)
 	// TODO maybe we should return error in pitaya start. maybe recover from fatal
 	// TODO make this method return error so that I can catch it
 	go func() {
-		pitaya.Start()
+		s.pitayaApp.Start()
 	}()
 	return &protos.Error{}, nil
 }
@@ -397,18 +411,10 @@ func configureJaeger(debug bool) {
 // StartSidecar starts the sidecar server, it instantiates the GRPC server and
 // listens for incoming client connections. This is the very first method that
 // is called when the sidecar is starting.
-func StartSidecar(cfg *config.Config, debug bool, bindAddr, bindProto string) {
-	// Start our own logger
-	log := logrus.New()
-	if debug {
-		log.SetLevel(logrus.DebugLevel)
-	}
-	sidecar.log = log.WithField("source", "sidecar")
-	pitaya.SetLogger(sidecar.log)
-
+func StartSidecar(cfg *config.BuilderConfig, debug bool, bindAddr, bindProto string) {
 	sidecar.config = cfg
 	sidecar.sidecarServer = &SidecarServer{}
-
+	sidecar.debug = debug
 	if bindProto != "unix" && bindProto != "tcp" {
 		logger.Log.Fatal("only supported schemes are unix and tcp, review your bindaddr config")
 	}
@@ -452,5 +458,5 @@ func StartSidecar(cfg *config.Config, debug bool, bindAddr, bindProto string) {
 	case <-sidecar.stopChan:
 		logger.Log.Warn("the app will shutdown in a few seconds")
 	}
-	pitaya.Shutdown().Wait()
+	pitaya.Shutdown()
 }
