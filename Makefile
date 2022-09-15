@@ -34,6 +34,9 @@ setup-protobuf-macos:
 run-chat-example:
 	@cd examples/testing && docker-compose up -d etcd nats && cd ../demo/chat/ && go run main.go
 
+run-sidecar-example:
+	@go run examples/demo/sidecar/main.go
+
 run-cluster-example-frontend:
 	@PITAYA_METRICS_PROMETHEUS_PORT=9090 go run examples/demo/cluster/main.go
 
