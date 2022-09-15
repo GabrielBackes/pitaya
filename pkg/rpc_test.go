@@ -22,7 +22,7 @@ package pkg
 
 import (
 	"context"
-	cluster2 "github.com/topfreegames/pitaya/v2/pkg/cluster"
+	"github.com/topfreegames/pitaya/v2/pkg/cluster"
 	"github.com/topfreegames/pitaya/v2/pkg/cluster/mocks"
 	"github.com/topfreegames/pitaya/v2/pkg/config"
 	"github.com/topfreegames/pitaya/v2/pkg/conn/codec"
@@ -54,7 +54,7 @@ func TestRawRPC(t *testing.T) {
 	config := config.NewDefaultBuilderConfig()
 	app := NewDefaultApp(true, "testtype", Cluster, map[string]string{}, *config).(*App)
 	app.server.ID = "myserver"
-	app.rpcServer = &cluster2.NatsRPCServer{}
+	app.rpcServer = &cluster.NatsRPCServer{}
 	tables := []struct {
 		name     string
 		routeStr string
@@ -83,13 +83,13 @@ func TestRawRPC(t *testing.T) {
 				sessionPool := sessionmocks.NewMockSessionPool(ctrl)
 				router := router.New()
 				handlerPool := service.NewHandlerPool()
-				svc := service.NewRemoteService(mockRPCClient, mockRPCServer, mockSD, packetEncoder, mockSerializer, router, messageEncoder, &cluster2.Server{}, sessionPool, pipeline.NewHandlerHooks(), handlerPool)
+				svc := service.NewRemoteService(mockRPCClient, mockRPCServer, mockSD, packetEncoder, mockSerializer, router, messageEncoder, &cluster.Server{}, sessionPool, pipeline.NewHandlerHooks(), handlerPool)
 				assert.NotNil(t, svc)
 				app.remoteService = svc
 				app.server.ID = "notmyserver"
 				b, err := proto.Marshal(&test.SomeStruct{A: 1})
 				assert.NoError(t, err)
-				mockSD.EXPECT().GetServer("myserver").Return(&cluster2.Server{}, nil)
+				mockSD.EXPECT().GetServer("myserver").Return(&cluster.Server{}, nil)
 				mockRPCClient.EXPECT().Call(ctx, protos.RPCType_User, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(&protos.Response{Data: b}, nil)
 			}
 
@@ -103,7 +103,7 @@ func TestDoSendRPC(t *testing.T) {
 	config := config.NewDefaultBuilderConfig()
 	app := NewDefaultApp(true, "testtype", Cluster, map[string]string{}, *config).(*App)
 	app.server.ID = "myserver"
-	app.rpcServer = &cluster2.NatsRPCServer{}
+	app.rpcServer = &cluster.NatsRPCServer{}
 	tables := []struct {
 		name     string
 		routeStr string
@@ -132,13 +132,13 @@ func TestDoSendRPC(t *testing.T) {
 				sessionPool := sessionmocks.NewMockSessionPool(ctrl)
 				router := router.New()
 				handlerPool := service.NewHandlerPool()
-				svc := service.NewRemoteService(mockRPCClient, mockRPCServer, mockSD, packetEncoder, mockSerializer, router, messageEncoder, &cluster2.Server{}, sessionPool, pipeline.NewHandlerHooks(), handlerPool)
+				svc := service.NewRemoteService(mockRPCClient, mockRPCServer, mockSD, packetEncoder, mockSerializer, router, messageEncoder, &cluster.Server{}, sessionPool, pipeline.NewHandlerHooks(), handlerPool)
 				assert.NotNil(t, svc)
 				app.remoteService = svc
 				app.server.ID = "notmyserver"
 				b, err := proto.Marshal(&test.SomeStruct{A: 1})
 				assert.NoError(t, err)
-				mockSD.EXPECT().GetServer("myserver").Return(&cluster2.Server{}, nil)
+				mockSD.EXPECT().GetServer("myserver").Return(&cluster.Server{}, nil)
 				mockRPCClient.EXPECT().Call(ctx, protos.RPCType_User, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(&protos.Response{Data: b}, nil)
 			}
 			err := app.RPCTo(ctx, "myserver", table.routeStr, table.reply, table.arg)

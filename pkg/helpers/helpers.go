@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/tests/v3/framework/integration"
 	"github.com/nats-io/nats-server/v2/server"
 	gnatsd "github.com/nats-io/nats-server/v2/test"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
 // GetFreePort returns a free port
@@ -124,8 +124,6 @@ func StartServer(
 	}
 	t.Helper()
 	args := []string{
-		"-address",
-		"localhost",
 		"-type",
 		svType,
 		"-port",

@@ -469,7 +469,7 @@ func TestNatsRPCClientCall(t *testing.T) {
 			ss.EXPECT().GetDataEncoded().Return(data2).Times(1)
 
 			res, err := rpcClient.Call(context.Background(), protos.RPCType_Sys, rt, ss, msg, sv2)
-			assert.Equal(t, table.expected, res)
+			assert.True(t, proto.Equal(table.expected, res))
 			if table.err != nil {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), table.err.Error())

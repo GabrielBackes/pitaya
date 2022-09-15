@@ -63,7 +63,7 @@ func (app *App) basicCheckRPC(ctx context.Context, serverID, routeStr string) (*
 		return nil, err
 	}
 
-	if r.SvType == "" && serverID == "" {
+	if r.SvType == "" {
 		return nil, constants.ErrNoServerTypeChosenForRPC
 	}
 
