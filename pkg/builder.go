@@ -243,12 +243,7 @@ func (builder *Builder) Build() Pitaya {
 			handlerPool,
 		)
 
-		if builder.RPCServer.GetPitayaServer() != nil {
-			logger.Log.Error("ja foi setado o pitaya server!")
-		}else{
-			logger.Log.Error("nao foi setado o pitaya server!")
-			builder.RPCServer.SetPitayaServer(remoteService)
-		}
+		builder.RPCServer.SetPitayaServer(remoteService)
 	}
 
 	agentFactory := agent.NewAgentFactory(builder.DieChan,

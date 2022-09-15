@@ -7,8 +7,6 @@ import (
 	"github.com/topfreegames/pitaya/v2/pkg/config"
 	"github.com/topfreegames/pitaya/v2/pkg/constants"
 	"github.com/topfreegames/pitaya/v2/pkg/errors"
-	"google.golang.org/protobuf/proto"
-
 	"net"
 	"os"
 	"os/signal"
@@ -27,7 +25,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	clusterprotos "github.com/topfreegames/pitaya/v2/examples/demo/protos"
 )
 
 // TODO: implement jaeger into this, test everything, if connection dies this
@@ -131,12 +128,6 @@ func (s *Sidecar) Call(ctx context.Context, req *protos.Request) (*protos.Respon
 	reqMap[call.reqId] = call
 	reqMutex.Unlock()
 
-	logger.Log.Info("Message on route:", req.Msg.Route)
-
-	var msg clusterprotos.RPCMsg
-	proto.Unmarshal(req.Msg.GetData(), &msg)
-
-	logger.Log.Info("Message data:", msg.Msg)
 
 	s.callChan <- call
 
@@ -162,12 +153,6 @@ func (s *SidecarServer) finishRPC(ctx context.Context, res *protos.RPCResponse) 
 	defer reqMutex.RUnlock()
 	call, ok := reqMap[res.ReqId]
 	if ok {
-		logger.Log.Info("Response on route:", call.req.Msg.Route)
-
-		var msg clusterprotos.RPCRes
-		proto.Unmarshal(res.Res.Data, &msg)
-
-		logger.Log.Info("Response data:", msg.Msg)
 		call.res = res.Res
 		call.err = res.Err
 		close(call.done)
@@ -327,7 +312,7 @@ func (s *SidecarServer) SendKick(ctx context.Context, in *protos.KickRequest) (*
 func (s *SidecarServer) StartPitaya(ctx context.Context, req *protos.StartPitayaRequest) (*protos.Error, error) {
 	pitayaconfig := req.GetConfig()
 
-	builder := pitaya.NewDefaultBuilder(
+	builder := NewSidecarBuilder(
 		pitayaconfig.GetFrontend(),
 		pitayaconfig.GetType(),
 		pitaya.Cluster,
@@ -336,10 +321,9 @@ func (s *SidecarServer) StartPitaya(ctx context.Context, req *protos.StartPitaya
 		)
 
 	builder.ServiceDiscovery.AddListener(sidecar)
-
 	// register the sidecar as the pitaya server so that calls will be delivered
 	// here and we can forward to the remote process
-	builder.RPCServer.SetPitayaServer(sidecar)
+	builder.SetPitayaServer(sidecar)
 
 	s.pitayaApp = builder.Build()
 
