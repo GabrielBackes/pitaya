@@ -22,7 +22,7 @@ type Server struct {
 
 // GetServer is called by the sidecar client to get the information from
 // a pitaya server by passing its ID
-func (s *Server) GetServer(ctx context.Context, in *protos.Server) (*protos.Server, error) {
+func (s Server) GetServer(ctx context.Context, in *protos.Server) (*protos.Server, error) {
 	server, err := pitaya.GetServerByID(in.Id)
 	if err != nil {
 		return nil, err
