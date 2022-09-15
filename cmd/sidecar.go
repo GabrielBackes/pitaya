@@ -37,7 +37,8 @@ var sidecarCmd = &cobra.Command{
 	Long:  `starts pitaya in sidecar mode`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := config.NewBuilderConfig(config.NewConfig())
-		sidecar.StartSidecar(cfg, debug, bind, bindProtocol)
+		sidecar := sidecar.NewSidecar(*cfg, debug)
+		sidecar.StartSidecar(bind, bindProtocol)
 	},
 }
 
