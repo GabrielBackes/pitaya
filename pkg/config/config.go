@@ -37,9 +37,6 @@ type PitayaConfig struct {
 	Metrics struct {
 		Period time.Duration
 	}
-	Sidecar struct{
-		CallTimeout time.Duration
-	}
 }
 
 // NewDefaultPitayaConfig provides default configuration for Pitaya App
@@ -101,11 +98,6 @@ func NewDefaultPitayaConfig() *PitayaConfig {
 			Period time.Duration
 		}{
 			Period: time.Duration(15 * time.Second),
-		},
-		Sidecar: struct {
-			CallTimeout time.Duration
-		}{
-			CallTimeout: time.Duration(1 * time.Second),
 		},
 	}
 }
@@ -182,6 +174,19 @@ func NewBuilderConfig(config *Config) *BuilderConfig {
 	}
 	fmt.Println(conf)
 	return conf
+}
+
+//SidecarConfig
+type SidecarConfig struct {
+	CallTimeout time.Duration
+	Debug bool
+}
+
+func NewDefaultSidecarConfig() *SidecarConfig{
+	return &SidecarConfig{
+		CallTimeout: 1 * time.Second,
+		Debug: false,
+	}
 }
 
 // GRPCClientConfig rpc client config struct

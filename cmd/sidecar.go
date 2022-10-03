@@ -17,7 +17,9 @@ package cmd
 
 import (
 	"fmt"
+	pitaya "github.com/topfreegames/pitaya/v2/pkg"
 	"github.com/topfreegames/pitaya/v2/pkg/config"
+	"github.com/topfreegames/pitaya/v2/pkg/logger/logrus"
 	"github.com/topfreegames/pitaya/v2/sidecar"
 	"os"
 	"path/filepath"
@@ -36,9 +38,15 @@ var sidecarCmd = &cobra.Command{
 	Short: "starts pitaya in sidecar mode",
 	Long:  `starts pitaya in sidecar mode`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg := config.NewBuilderConfig(config.NewConfig())
-		sidecar := sidecar.NewSidecar(*cfg, debug)
-		sidecar.StartSidecar(bind, bindProtocol)
+		config := config.NewDefaultSidecarConfig()
+
+		remote := sidecar.NewRemote(*config)
+		app := initializePitaya(remote)
+
+		server := sidecar.NewServer(app)
+		go server.Start(bind, bindProtocol)
+
+		app.Start()
 	},
 }
 
@@ -48,4 +56,35 @@ func init() {
 	sidecarCmd.Flags().StringVarP(&bind, "bind", "b", filepath.FromSlash(fmt.Sprintf("%s/pitaya.sock", strings.TrimSuffix(tmpDir, "/"))), "bind address of the sidecar")
 	sidecarCmd.Flags().StringVarP(&bindProtocol, "bindProtocol", "p", "unix", "bind address of the sidecar")
 	rootCmd.AddCommand(sidecarCmd)
+}
+
+func initializePitaya(sidecar *sidecar.Remote) pitaya.Pitaya{
+	config := config.NewDefaultBuilderConfig()
+
+	metadata := make(map[string]string)
+	builder := pitaya.NewDefaultBuilder(
+		false,
+		"sidecar",
+		pitaya.Cluster,
+		metadata,
+		*config,
+	)
+
+	RPCServer := builder.RPCServer
+	builder.ServiceDiscovery.AddListener(sidecar)
+
+	app := builder.Build()
+
+	// register the sidecar as the pitaya server so that calls will be delivered
+	// here and we can forward to the remote process
+	RPCServer.SetPitayaServer(sidecar)
+
+	// Start our own logger
+	log := logrus.New()
+
+	app.SetDebug(debug)
+
+	pitaya.SetLogger(log.WithField("source", "sidecar"))
+
+	return app
 }
